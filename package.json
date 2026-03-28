@@ -1,0 +1,21 @@
+{
+  "name": "solarb",
+  "version": "1.0.0",
+  "private": true,
+  "workspaces": [
+    "packages/*"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "watcher": "npm run start --workspace=packages/watcher",
+    "detector": "npm run start --workspace=packages/detector"
+  },
+  "devDependencies": {
+    "@types/node": "^25.5.0",
+    "ts-node": "^10.9.2",
+    "typescript": "^6.0.2"
+  },
+  "dependencies": {
+    "dotenv": "^17.3.1"
+  }
+}
