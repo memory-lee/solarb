@@ -1,23 +1,18 @@
-import * as dotenv from "dotenv";
-dotenv.config(); // Load .env from project root (cwd)
-
-import { TOKEN_PAIRS, POLL_INTERVAL_MS, DexPrice, PriceMessage } from "@solarb/shared";
-import { fetchJupiterQuotes } from "./jupiter";
+import { TOKEN_PAIRS, POLL_INTERVAL_MS, DexPrice, PriceMessage, createPublisher } from "@solarb/shared";
+import { fetchJupiterQuotes } from "./jupiter.js";
 import { randomUUID } from "crypto";
 
 const NODE_ID = `watcher-${randomUUID().slice(0, 8)}`;
+const P2P_PORT = Number(process.env.WATCHER_P2P_PORT) || 6001;
 
 /**
  * Single poll cycle: fetch prices for all token pairs from Jupiter.
- * Returns all collected DexPrice entries.
  */
 async function pollPrices(): Promise<DexPrice[]> {
   const allPrices: DexPrice[] = [];
-
   const results = await Promise.allSettled(
     TOKEN_PAIRS.map((pair) => fetchJupiterQuotes(pair))
   );
-
   for (const result of results) {
     if (result.status === "fulfilled") {
       allPrices.push(...result.value);
@@ -25,12 +20,11 @@ async function pollPrices(): Promise<DexPrice[]> {
       console.error("Failed to fetch pair:", result.reason);
     }
   }
-
   return allPrices;
 }
 
 /**
- * Format price data for console output (for dev/debugging).
+ * Format price data for console output.
  */
 function logPrices(prices: DexPrice[]): void {
   const grouped = new Map<string, DexPrice[]>();
@@ -44,24 +38,18 @@ function logPrices(prices: DexPrice[]): void {
   for (const [pair, dexPrices] of grouped) {
     console.log(`  ${pair}:`);
     for (const dp of dexPrices) {
-      console.log(`    ${dp.dex.padEnd(10)} ${dp.price.toFixed(6)}`);
+      console.log(`    ${dp.dex.padEnd(14)} ${dp.price.toFixed(6)}`);
     }
-    // Show spread if we have 2+ DEX prices
     if (dexPrices.length >= 2) {
       const sorted = [...dexPrices].sort((a, b) => a.price - b.price);
       const low = sorted[0];
       const high = sorted[sorted.length - 1];
       const spread = ((high.price - low.price) / low.price) * 100;
-      console.log(
-        `    >> spread: ${spread.toFixed(4)}% (${low.dex} → ${high.dex})`
-      );
+      console.log(`    >> spread: ${spread.toFixed(4)}% (${low.dex} → ${high.dex})`);
     }
   }
 }
 
-/**
- * Build a PriceMessage for libp2p gossipsub (used later when P2P is integrated).
- */
 function buildPriceMessage(prices: DexPrice[]): PriceMessage {
   return {
     type: "price_update",
@@ -72,31 +60,27 @@ function buildPriceMessage(prices: DexPrice[]): PriceMessage {
 }
 
 /**
- * Main loop.
- * Currently runs standalone (console output).
- * TODO: Integrate with libp2p gossipsub to publish price messages.
+ * Main loop with P2P publishing.
  */
 async function main(): Promise<void> {
   console.log(`[SolArb Watcher] Starting node: ${NODE_ID}`);
   console.log(`[SolArb Watcher] Monitoring ${TOKEN_PAIRS.length} pairs: ${TOKEN_PAIRS.map((p) => p.name).join(", ")}`);
   console.log(`[SolArb Watcher] Poll interval: ${POLL_INTERVAL_MS}ms`);
-  console.log();
+
+  // Start P2P publisher (TCP server)
+  const publisher = await createPublisher(P2P_PORT);
 
   // Initial poll
   const prices = await pollPrices();
   logPrices(prices);
-
-  // Build message (will be published to libp2p later)
-  const msg = buildPriceMessage(prices);
-  console.log(`\n[P2P] Would publish message with ${msg.prices.length} prices to gossipsub topic`);
+  publisher.publish(buildPriceMessage(prices));
 
   // Continuous polling
   setInterval(async () => {
     try {
       const prices = await pollPrices();
       logPrices(prices);
-      const msg = buildPriceMessage(prices);
-      // TODO: publish to libp2p gossipsub
+      publisher.publish(buildPriceMessage(prices));
     } catch (err) {
       console.error("[Watcher] Poll error:", err);
     }

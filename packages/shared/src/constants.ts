@@ -1,10 +1,12 @@
-import { TokenPairConfig } from "./types";
+import { TokenPairConfig } from "./types.js";
 
 /** Jupiter Quote API base URL (Swap API v1) */
 export const JUPITER_QUOTE_API = "https://api.jup.ag/swap/v1/quote";
 
-/** Jupiter API key from environment variable */
-export const JUPITER_API_KEY = process.env.JUPITER_API_KEY || "";
+/** Jupiter API key — read lazily from process.env at call time (not module load) */
+export function getJupiterApiKey(): string {
+  return process.env.JUPITER_API_KEY || "";
+}
 
 /** Well-known Solana token mint addresses */
 export const MINTS = {

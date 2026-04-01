@@ -1,4 +1,4 @@
-import { DexPrice, TokenPairConfig, JUPITER_QUOTE_API, JUPITER_API_KEY } from "@solarb/shared";
+import { DexPrice, TokenPairConfig, JUPITER_QUOTE_API, getJupiterApiKey } from "@solarb/shared";
 
 /**
  * Raw Jupiter Quote API response (simplified to the fields we need)
@@ -104,7 +104,7 @@ async function fetchSingleQuote(
 
     const url = `${JUPITER_QUOTE_API}?${params.toString()}`;
     const res = await fetch(url, {
-      headers: JUPITER_API_KEY ? { "x-api-key": JUPITER_API_KEY } : {},
+      headers: getJupiterApiKey() ? { "x-api-key": getJupiterApiKey() } : {},
     });
     if (!res.ok) {
       console.error(`Jupiter API error: ${res.status} ${res.statusText}`);

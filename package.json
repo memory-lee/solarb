@@ -2,6 +2,7 @@
   "name": "solarb",
   "version": "1.0.0",
   "private": true,
+  "type": "module",
   "workspaces": [
     "packages/*"
   ],
@@ -16,6 +17,8 @@
     "typescript": "^6.0.2"
   },
   "dependencies": {
+    "@aws-sdk/client-dynamodb": "^3.1021.0",
+    "@aws-sdk/lib-dynamodb": "^3.1021.0",
     "dotenv": "^17.3.1"
   }
 }
