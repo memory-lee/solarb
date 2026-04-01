@@ -1,141 +1,161 @@
-/**
- * P2P communication layer using TCP sockets with JSON-line protocol.
- *
- * Architecture:
- *   Watcher (publisher) → TCP server on a known port
- *   Detector (subscriber) → TCP client connects to Watcher
- *
- * Messages are newline-delimited JSON (JSON-lines / NDJSON).
- * Supports multiple simultaneous subscribers (fan-out).
- * Auto-reconnect on disconnect.
- */
-import { createServer, createConnection, Socket, Server } from "net";
-import { PriceMessage } from "./index.js";
+import { gossipsub } from "@chainsafe/libp2p-gossipsub";
+import { noise } from "@chainsafe/libp2p-noise";
+import { yamux } from "@chainsafe/libp2p-yamux";
+import { identify, type Identify } from "@libp2p/identify";
+import { mdns } from "@libp2p/mdns";
+import { tcp } from "@libp2p/tcp";
+import { createLibp2p, type Libp2p } from "libp2p";
+import { PRICE_TOPIC } from "./constants.js";
+import type { PriceMessage } from "./types.js";
 
-// ── Publisher (Watcher side) ───────────────────────────────────────
+type P2PPubSub = ReturnType<ReturnType<typeof gossipsub>>;
 
-export interface P2PPublisher {
-  port: number;
-  server: Server;
-  clients: Set<Socket>;
-  publish: (msg: PriceMessage) => void;
+interface P2PServices {
+  [serviceName: string]: unknown;
+  pubsub: P2PPubSub;
+  identify: Identify;
 }
 
-/**
- * Start a TCP server that broadcasts PriceMessages to all connected peers.
- */
-export function createPublisher(port: number): Promise<P2PPublisher> {
-  const clients = new Set<Socket>();
+export type P2PNode = Libp2p<P2PServices>;
 
-  const server = createServer((socket) => {
-    const addr = `${socket.remoteAddress}:${socket.remotePort}`;
-    console.log(`[P2P] Peer connected: ${addr}`);
-    clients.add(socket);
+export interface P2PNodeConfig {
+  listenHost?: string;
+  listenPort?: number;
+  mdnsIntervalMs?: number;
+  mdnsServiceTag?: string;
+  nodeName?: string;
+}
 
-    socket.on("close", () => {
-      console.log(`[P2P] Peer disconnected: ${addr}`);
-      clients.delete(socket);
-    });
+const DEFAULT_MDNS_SERVICE_TAG = "solarb.local";
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
 
-    socket.on("error", (err) => {
-      console.error(`[P2P] Peer error (${addr}):`, err.message);
-      clients.delete(socket);
-    });
+export async function createP2PNode(
+  config: P2PNodeConfig = {}
+): Promise<P2PNode> {
+  const {
+    listenHost = "0.0.0.0",
+    listenPort = 0,
+    mdnsIntervalMs = 5_000,
+    mdnsServiceTag = DEFAULT_MDNS_SERVICE_TAG,
+    nodeName = "solarb-node",
+  } = config;
+
+  const node = await createLibp2p<P2PServices>({
+    addresses: {
+      listen: [`/ip4/${listenHost}/tcp/${listenPort}`],
+    },
+    transports: [tcp()],
+    connectionEncrypters: [noise()],
+    streamMuxers: [yamux()],
+    peerDiscovery: [
+      mdns({
+        interval: mdnsIntervalMs,
+        serviceTag: mdnsServiceTag,
+      }),
+    ],
+    services: {
+      pubsub: gossipsub({
+        emitSelf: false,
+        floodPublish: true,
+        fallbackToFloodsub: true,
+        allowPublishToZeroTopicPeers: true,
+      }),
+      identify: identify(),
+    },
   });
 
-  return new Promise((resolve, reject) => {
-    server.listen(port, () => {
-      console.log(`[P2P] Publisher listening on tcp://0.0.0.0:${port}`);
-      console.log(`[P2P] Peers can connect to: tcp://127.0.0.1:${port}`);
+  node.addEventListener("peer:discovery", async (event) => {
+    const peer = event.detail;
+    const localPeerId = node.peerId.toString();
+    const remotePeerId = peer.id.toString();
 
-      const publisher: P2PPublisher = {
-        port,
-        server,
-        clients,
-        publish(msg: PriceMessage) {
-          const line = JSON.stringify(msg) + "\n";
-          for (const client of clients) {
-            try {
-              client.write(line);
-            } catch {
-              // client disconnected, will be cleaned up
-            }
-          }
-          if (clients.size > 0) {
-            console.log(
-              `[P2P] Published ${msg.prices.length} prices to ${clients.size} peer(s)`
-            );
-          }
-        },
-      };
+    if (remotePeerId === localPeerId) {
+      return;
+    }
 
-      resolve(publisher);
-    });
+    if (node.getConnections(peer.id).length > 0) {
+      return;
+    }
 
-    server.on("error", reject);
-  });
-}
+    // Use a stable tie-breaker to avoid both peers dialing each other.
+    if (localPeerId.localeCompare(remotePeerId) >= 0) {
+      return;
+    }
 
-// ── Subscriber (Detector side) ─────────────────────────────────────
+    console.log(`[P2P:${nodeName}] Discovered peer ${remotePeerId} via mDNS`);
 
-export interface P2PSubscriberConfig {
-  /** Host of the publisher (Watcher) */
-  host: string;
-  /** Port of the publisher (Watcher) */
-  port: number;
-  /** Auto-reconnect delay in ms (default 3000) */
-  reconnectMs?: number;
-}
-
-/**
- * Connect to a Watcher's TCP server and receive PriceMessages.
- * Automatically reconnects on disconnect.
- */
-export function createSubscriber(
-  config: P2PSubscriberConfig,
-  handler: (msg: PriceMessage) => void
-): void {
-  const { host, port, reconnectMs = 3000 } = config;
-  let buffer = "";
-
-  function connect() {
-    console.log(`[P2P] Connecting to publisher at ${host}:${port}...`);
-
-    const socket = createConnection({ host, port }, () => {
-      console.log(`[P2P] Connected to publisher at ${host}:${port}`);
-    });
-
-    socket.setEncoding("utf8");
-
-    socket.on("data", (chunk: string) => {
-      buffer += chunk;
-      // Process complete JSON lines
-      const lines = buffer.split("\n");
-      buffer = lines.pop() || ""; // Keep incomplete line in buffer
-      for (const line of lines) {
-        if (line.trim()) {
-          try {
-            const msg = JSON.parse(line) as PriceMessage;
-            handler(msg);
-          } catch (err) {
-            console.error("[P2P] Failed to parse message:", err);
-          }
-        }
-      }
-    });
-
-    socket.on("close", () => {
-      console.log(
-        `[P2P] Disconnected from publisher. Reconnecting in ${reconnectMs}ms...`
+    try {
+      await node.dial(peer.multiaddrs);
+      console.log(`[P2P:${nodeName}] Connected to discovered peer ${remotePeerId}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.warn(
+        `[P2P:${nodeName}] Failed to dial discovered peer ${remotePeerId}: ${message}`
       );
-      setTimeout(connect, reconnectMs);
-    });
+    }
+  });
 
-    socket.on("error", (err) => {
-      console.error(`[P2P] Connection error:`, err.message);
-      // 'close' event will fire after this, triggering reconnect
-    });
-  }
+  node.addEventListener("peer:connect", (event) => {
+    console.log(`[P2P:${nodeName}] Peer connected: ${event.detail.toString()}`);
+  });
 
-  connect();
+  node.addEventListener("peer:disconnect", (event) => {
+    console.log(
+      `[P2P:${nodeName}] Peer disconnected: ${event.detail.toString()}`
+    );
+  });
+
+  const listenAddrs = node
+    .getMultiaddrs()
+    .map((multiaddr) => multiaddr.toString())
+    .join(", ");
+
+  console.log(
+    `[P2P:${nodeName}] Started with peerId ${node.peerId.toString()} listening on ${listenAddrs}`
+  );
+  console.log(
+    `[P2P:${nodeName}] mDNS enabled (serviceTag=${mdnsServiceTag}, interval=${mdnsIntervalMs}ms)`
+  );
+
+  return node;
+}
+
+export async function publishPrices(
+  node: P2PNode,
+  message: PriceMessage
+): Promise<void> {
+  await node.services.pubsub.publish(
+    PRICE_TOPIC,
+    textEncoder.encode(JSON.stringify(message))
+  );
+
+  const peers = node.services.pubsub.getSubscribers(PRICE_TOPIC).length;
+  console.log(
+    `[P2P] Published ${message.prices.length} prices on ${PRICE_TOPIC} to ${peers} peer(s)`
+  );
+}
+
+export function subscribePrices(
+  node: P2PNode,
+  handler: (message: PriceMessage) => void
+): void {
+  node.services.pubsub.subscribe(PRICE_TOPIC);
+
+  node.services.pubsub.addEventListener("message", (event) => {
+    if (event.detail.topic !== PRICE_TOPIC) {
+      return;
+    }
+
+    try {
+      const message = JSON.parse(
+        textDecoder.decode(event.detail.data)
+      ) as PriceMessage;
+      handler(message);
+    } catch (error) {
+      console.error("[P2P] Failed to decode price message:", error);
+    }
+  });
+
+  console.log(`[P2P] Subscribed to ${PRICE_TOPIC}`);
 }

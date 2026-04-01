@@ -2,14 +2,14 @@ import {
   TOKEN_PAIRS,
   DexPrice,
   PriceMessage,
-  createSubscriber,
+  createP2PNode,
+  subscribePrices,
 } from "@solarb/shared";
 import { SpreadAnalyzer } from "./spread-analyzer.js";
 import { startApiServer } from "./api.js";
 import { saveOpportunity } from "./dynamodb.js";
 
-const WATCHER_HOST = process.env.WATCHER_HOST || "127.0.0.1";
-const WATCHER_PORT = Number(process.env.WATCHER_PORT) || 6001;
+const DETECTOR_P2P_PORT = Number(process.env.DETECTOR_P2P_PORT) || 6002;
 
 const analyzer = new SpreadAnalyzer({
   multiplier: 2, // 2 standard deviations
@@ -95,18 +95,19 @@ async function main(): Promise<void> {
   const apiPort = Number(process.env.API_PORT) || 3000;
   startApiServer(analyzer, apiPort);
 
-  // Connect to Watcher via P2P (TCP subscriber with auto-reconnect)
+  const node = await createP2PNode({
+    listenPort: DETECTOR_P2P_PORT,
+    nodeName: "detector",
+  });
+
   let messageCount = 0;
-  createSubscriber(
-    { host: WATCHER_HOST, port: WATCHER_PORT },
-    (msg: PriceMessage) => {
-      messageCount++;
-      console.log(
-        `[P2P] Received ${msg.prices.length} prices from ${msg.nodeId} (msg #${messageCount})`
-      );
-      processPrices(msg.prices);
-    }
-  );
+  subscribePrices(node, (msg: PriceMessage) => {
+    messageCount++;
+    console.log(
+      `[P2P] Received ${msg.prices.length} prices from ${msg.nodeId} (msg #${messageCount})`
+    );
+    processPrices(msg.prices);
+  });
 }
 
 main().catch(console.error);

@@ -1,4 +1,12 @@
-import { TOKEN_PAIRS, POLL_INTERVAL_MS, DexPrice, PriceMessage, createPublisher } from "@solarb/shared";
+import {
+  TOKEN_PAIRS,
+  POLL_INTERVAL_MS,
+  DexPrice,
+  PriceMessage,
+  createP2PNode,
+  publishPrices,
+  subscribePrices,
+} from "@solarb/shared";
 import { fetchJupiterQuotes } from "./jupiter.js";
 import { randomUUID } from "crypto";
 
@@ -67,20 +75,25 @@ async function main(): Promise<void> {
   console.log(`[SolArb Watcher] Monitoring ${TOKEN_PAIRS.length} pairs: ${TOKEN_PAIRS.map((p) => p.name).join(", ")}`);
   console.log(`[SolArb Watcher] Poll interval: ${POLL_INTERVAL_MS}ms`);
 
-  // Start P2P publisher (TCP server)
-  const publisher = await createPublisher(P2P_PORT);
+  const node = await createP2PNode({
+    listenPort: P2P_PORT,
+    nodeName: NODE_ID,
+  });
+
+  // Watcher also subscribes so gossipsub can form a mesh with peers.
+  subscribePrices(node, () => {});
 
   // Initial poll
   const prices = await pollPrices();
   logPrices(prices);
-  publisher.publish(buildPriceMessage(prices));
+  await publishPrices(node, buildPriceMessage(prices));
 
   // Continuous polling
   setInterval(async () => {
     try {
       const prices = await pollPrices();
       logPrices(prices);
-      publisher.publish(buildPriceMessage(prices));
+      await publishPrices(node, buildPriceMessage(prices));
     } catch (err) {
       console.error("[Watcher] Poll error:", err);
     }

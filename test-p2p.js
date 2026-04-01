@@ -1,5 +1,5 @@
 /**
- * Quick standalone test: two libp2p nodes with gossipsub.
+ * Standalone validation for the compatible libp2p + gossipsub + mDNS stack.
  * Run: node test-p2p.js
  */
 import { createLibp2p } from "libp2p";
@@ -8,15 +8,45 @@ import { noise } from "@chainsafe/libp2p-noise";
 import { yamux } from "@chainsafe/libp2p-yamux";
 import { gossipsub } from "@chainsafe/libp2p-gossipsub";
 import { identify } from "@libp2p/identify";
+import { mdns } from "@libp2p/mdns";
 
-const TOPIC = "test/topic/1.0.0";
+const TOPIC = "solarb/test-p2p/1.0.0";
+const MDNS_TAG = "solarb.local";
+const textEncoder = new TextEncoder();
+const textDecoder = new TextDecoder();
 
-async function createNode(port) {
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitFor(label, predicate, timeoutMs) {
+  const startedAt = Date.now();
+
+  while (Date.now() - startedAt < timeoutMs) {
+    const value = await predicate();
+    if (value) {
+      return value;
+    }
+    await delay(500);
+  }
+
+  throw new Error(`Timed out waiting for ${label} after ${timeoutMs}ms`);
+}
+
+async function createNode(name, port) {
   const node = await createLibp2p({
-    addresses: { listen: [`/ip4/127.0.0.1/tcp/${port}`] },
+    addresses: {
+      listen: [`/ip4/127.0.0.1/tcp/${port}`],
+    },
     transports: [tcp()],
     connectionEncrypters: [noise()],
     streamMuxers: [yamux()],
+    peerDiscovery: [
+      mdns({
+        interval: 1_000,
+        serviceTag: MDNS_TAG,
+      }),
+    ],
     services: {
       pubsub: gossipsub({
         emitSelf: false,
@@ -27,73 +57,116 @@ async function createNode(port) {
       identify: identify(),
     },
   });
-  await node.start();
-  console.log(`Node started on port ${port}, PeerId: ${node.peerId.toString()}`);
+
+  node.addEventListener("peer:discovery", async (event) => {
+    const peer = event.detail;
+    const peerId = peer.id.toString();
+
+    if (peerId === node.peerId.toString()) {
+      return;
+    }
+
+    if (node.getConnections(peer.id).length > 0) {
+      return;
+    }
+
+    console.log(`[${name}] discovered ${peerId} via mDNS`);
+
+    try {
+      await node.dial(peer.multiaddrs);
+      console.log(`[${name}] dialed ${peerId}`);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      console.log(`[${name}] dial failed for ${peerId}: ${message}`);
+    }
+  });
+
+  node.addEventListener("peer:connect", (event) => {
+    console.log(`[${name}] connected to ${event.detail.toString()}`);
+  });
+
+  node.addEventListener("peer:identify", (event) => {
+    console.log(
+      `[${name}] identified ${event.detail.peerId.toString()} with ${event.detail.protocols.length} protocol(s)`
+    );
+  });
+
+  node.services.pubsub.subscribe(TOPIC);
+  console.log(
+    `[${name}] started on /ip4/127.0.0.1/tcp/${port} with peerId ${node.peerId.toString()}`
+  );
+  console.log(`[${name}] subscribed to ${TOPIC}`);
+
   return node;
 }
 
 async function main() {
-  // Create two nodes
-  const nodeA = await createNode(9001);
-  const nodeB = await createNode(9002);
+  const nodeA = await createNode("nodeA", 9101);
+  const nodeB = await createNode("nodeB", 9102);
 
-  // Subscribe nodeB to the topic
-  const pubsubB = nodeB.services.pubsub;
-  pubsubB.subscribe(TOPIC);
-  pubsubB.addEventListener("message", (evt) => {
-    if (evt.detail.topic === TOPIC) {
-      const text = new TextDecoder().decode(evt.detail.data);
-      console.log(`\n>>> nodeB RECEIVED: ${text}\n`);
+  try {
+    const received = new Promise((resolve) => {
+      nodeB.services.pubsub.addEventListener("message", (event) => {
+        if (event.detail.topic !== TOPIC) {
+          return;
+        }
+
+        const text = textDecoder.decode(event.detail.data);
+        console.log(`\n>>> nodeB RECEIVED: ${text}\n`);
+        resolve(text);
+      });
+    });
+
+    console.log("Waiting for mDNS discovery and gossipsub mesh...");
+    await waitFor(
+      "topic peers on both nodes",
+      async () => {
+        const peersA = nodeA.services.pubsub
+          .getSubscribers(TOPIC)
+          .map((peerId) => peerId.toString());
+        const peersB = nodeB.services.pubsub
+          .getSubscribers(TOPIC)
+          .map((peerId) => peerId.toString());
+
+        console.log(
+          `  nodeA sees ${peersA.length} topic peer(s), nodeB sees ${peersB.length} topic peer(s)`
+        );
+
+        return peersA.length > 0 && peersB.length > 0;
+      },
+      15_000
+    );
+
+    console.log("Publishing test message from nodeA...");
+    await nodeA.services.pubsub.publish(
+      TOPIC,
+      textEncoder.encode("hello from nodeA over mDNS + gossipsub")
+    );
+
+    await Promise.race([
+      received,
+      waitFor("message delivery", async () => false, 5_000),
+    ]);
+
+    const connsA = nodeA.getConnections();
+    console.log(`nodeA connections: ${connsA.length}`);
+    for (const conn of connsA) {
+      console.log(
+        `  peer: ${conn.remotePeer.toString()}, streams: ${conn.streams.length}`
+      );
+      for (const stream of conn.streams) {
+        console.log(`    stream: ${stream.protocol} (${stream.direction})`);
+      }
     }
-  });
-  console.log("nodeB subscribed to topic");
 
-  // Subscribe nodeA too (for mesh formation)
-  const pubsubA = nodeA.services.pubsub;
-  pubsubA.subscribe(TOPIC);
-  console.log("nodeA subscribed to topic");
-
-  // Connect A -> B
-  const addrB = nodeB.getMultiaddrs()[0];
-  console.log(`Dialing nodeB at ${addrB.toString()}...`);
-  await nodeA.dial(addrB);
-  console.log("Connected!");
-
-  // Wait for gossipsub mesh to form
-  console.log("Waiting for gossipsub mesh...");
-  for (let i = 1; i <= 10; i++) {
-    await new Promise((r) => setTimeout(r, 1000));
-    const peersA = pubsubA.getSubscribers(TOPIC).map((p) => p.toString());
-    const peersB = pubsubB.getSubscribers(TOPIC).map((p) => p.toString());
-    console.log(`  tick ${i}: nodeA sees ${peersA.length} topic peers, nodeB sees ${peersB.length} topic peers`);
-
-    if (peersA.length > 0 && peersB.length > 0) {
-      console.log("Mesh formed! Publishing test message...");
-      const data = new TextEncoder().encode("hello from nodeA");
-      await pubsubA.publish(TOPIC, data);
-      console.log("Published! Waiting 2s for delivery...");
-      await new Promise((r) => setTimeout(r, 2000));
-      break;
-    }
+    console.log("\nP2P validation succeeded.");
+  } finally {
+    await nodeA.stop();
+    await nodeB.stop();
   }
-
-  // Check protocols
-  console.log("\nnodeA protocols:", nodeA.getProtocols());
-  console.log("nodeB protocols:", nodeB.getProtocols());
-
-  // Check connections
-  const connsA = nodeA.getConnections();
-  console.log(`\nnodeA connections: ${connsA.length}`);
-  for (const conn of connsA) {
-    console.log(`  peer: ${conn.remotePeer.toString()}, streams: ${conn.streams.length}`);
-    for (const s of conn.streams) {
-      console.log(`    stream: ${s.protocol} (${s.direction})`);
-    }
-  }
-
-  await nodeA.stop();
-  await nodeB.stop();
-  process.exit(0);
 }
 
-main().catch(console.error);
+main().catch((error) => {
+  console.error(error);
+  process.exitCode = 1;
+});

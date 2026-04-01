@@ -7,7 +7,7 @@
     "packages/*"
   ],
   "scripts": {
-    "build": "npm run build --workspaces",
+    "build": "npm run build --workspace=packages/shared && npm run build --workspace=packages/watcher && npm run build --workspace=packages/detector",
     "watcher": "npm run start --workspace=packages/watcher",
     "detector": "npm run start --workspace=packages/detector"
   },
