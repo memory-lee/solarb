@@ -8,6 +8,7 @@ import {
 import { SpreadAnalyzer } from "./spread-analyzer.js";
 import { startApiServer } from "./api.js";
 import { saveOpportunity } from "./dynamodb.js";
+import { sendAlert } from "./sns.js";
 
 const DETECTOR_P2P_PORT = Number(process.env.DETECTOR_P2P_PORT) || 6002;
 
@@ -68,14 +69,15 @@ function logAnalysis(
       `\n  >> ${significant.length} significant opportunity(ies) detected!`
     );
 
-    // Write to DynamoDB
+    // Write to DynamoDB & send SNS alert
     for (const opp of significant) {
       saveOpportunity(opp).catch((err) =>
         console.error("[DynamoDB] Save failed:", err)
       );
+      sendAlert(opp).catch((err) =>
+        console.error("[SNS] Alert failed:", err)
+      );
     }
-
-    // TODO: Send SNS notification
   }
 }
 
