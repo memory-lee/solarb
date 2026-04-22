@@ -85,6 +85,9 @@ function logAnalysis(
  * Main entry point — connect to Watcher via P2P and process price feeds.
  */
 async function main(): Promise<void> {
+  const apiPort = Number(process.env.PORT) || Number(process.env.API_PORT) || 3000;
+  startApiServer(analyzer, apiPort);
+
   console.log("[SolArb Detector] Starting...");
   console.log(
     `[SolArb Detector] Monitoring ${TOKEN_PAIRS.length} pairs: ${TOKEN_PAIRS.map((p) => p.name).join(", ")}`
@@ -93,23 +96,26 @@ async function main(): Promise<void> {
     `[SolArb Detector] Adaptive threshold: mean + ${2}σ, min=${0.005}%`
   );
 
-  // Start REST API server
-  const apiPort = Number(process.env.API_PORT) || 3000;
-  startApiServer(analyzer, apiPort);
+  try {
+    const bootstrapPeers = process.env.BOOTSTRAP_PEERS?.split(",").filter(Boolean) || [];
 
-  const node = await createP2PNode({
-    listenPort: DETECTOR_P2P_PORT,
-    nodeName: "detector",
-  });
+    const node = await createP2PNode({
+      listenPort: DETECTOR_P2P_PORT,
+      nodeName: "detector",
+      bootstrapPeers,
+    });
 
-  let messageCount = 0;
-  subscribePrices(node, (msg: PriceMessage) => {
-    messageCount++;
-    console.log(
-      `[P2P] Received ${msg.prices.length} prices from ${msg.nodeId} (msg #${messageCount})`
-    );
-    processPrices(msg.prices);
-  });
+    let messageCount = 0;
+    subscribePrices(node, (msg: PriceMessage) => {
+      messageCount++;
+      console.log(
+        `[P2P] Received ${msg.prices.length} prices from ${msg.nodeId} (msg #${messageCount})`
+      );
+      processPrices(msg.prices);
+    });
+  } catch (err) {
+    console.error("[P2P] Initialization failed, continuing with REST API only:", err);
+  }
 }
 
 main().catch(console.error);

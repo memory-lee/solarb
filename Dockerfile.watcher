@@ -1,0 +1,33 @@
+FROM node:20-alpine AS build
+WORKDIR /app
+
+COPY package.json package-lock.json tsconfig.base.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/watcher/package.json ./packages/watcher/
+
+RUN npm ci
+
+COPY packages/shared/tsconfig.json ./packages/shared/
+COPY packages/watcher/tsconfig.json ./packages/watcher/
+COPY packages/shared/src ./packages/shared/src
+COPY packages/watcher/src ./packages/watcher/src
+
+RUN npm run build --workspace=packages/shared \
+ && npm run build --workspace=packages/watcher
+
+
+FROM node:20-alpine AS production
+WORKDIR /app
+
+COPY package.json package-lock.json ./
+COPY packages/shared/package.json ./packages/shared/
+COPY packages/watcher/package.json ./packages/watcher/
+
+RUN npm ci --omit=dev
+
+COPY --from=build /app/packages/shared/dist ./packages/shared/dist
+COPY --from=build /app/packages/watcher/dist ./packages/watcher/dist
+
+ENV NODE_ENV=production
+
+CMD ["node", "packages/watcher/dist/index.js"]

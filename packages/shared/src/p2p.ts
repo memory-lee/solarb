@@ -4,6 +4,7 @@ import { yamux } from "@chainsafe/libp2p-yamux";
 import { identify, type Identify } from "@libp2p/identify";
 import { mdns } from "@libp2p/mdns";
 import { tcp } from "@libp2p/tcp";
+import { multiaddr } from "@multiformats/multiaddr";
 import { createLibp2p, type Libp2p } from "libp2p";
 import { PRICE_TOPIC } from "./constants.js";
 import type { PriceMessage } from "./types.js";
@@ -24,6 +25,7 @@ export interface P2PNodeConfig {
   mdnsIntervalMs?: number;
   mdnsServiceTag?: string;
   nodeName?: string;
+  bootstrapPeers?: string[];
 }
 
 const DEFAULT_MDNS_SERVICE_TAG = "solarb.local";
@@ -39,6 +41,7 @@ export async function createP2PNode(
     mdnsIntervalMs = 5_000,
     mdnsServiceTag = DEFAULT_MDNS_SERVICE_TAG,
     nodeName = "solarb-node",
+    bootstrapPeers = [],
   } = config;
 
   const node = await createLibp2p<P2PServices>({
@@ -117,6 +120,28 @@ export async function createP2PNode(
   console.log(
     `[P2P:${nodeName}] mDNS enabled (serviceTag=${mdnsServiceTag}, interval=${mdnsIntervalMs}ms)`
   );
+
+  if (bootstrapPeers.length > 0) {
+    setTimeout(async () => {
+      if (node.getPeers().length > 0) {
+        return;
+      }
+      console.log(
+        `[P2P:${nodeName}] No peers found via mDNS after 10s, dialing ${bootstrapPeers.length} bootstrap peer(s)`
+      );
+      for (const addr of bootstrapPeers) {
+        try {
+          await node.dial(multiaddr(addr));
+          console.log(`[P2P:${nodeName}] Connected to bootstrap peer ${addr}`);
+        } catch (error) {
+          const message = error instanceof Error ? error.message : String(error);
+          console.warn(
+            `[P2P:${nodeName}] Failed to dial bootstrap peer ${addr}: ${message}`
+          );
+        }
+      }
+    }, 10_000);
+  }
 
   return node;
 }

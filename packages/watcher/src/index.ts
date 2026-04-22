@@ -75,9 +75,12 @@ async function main(): Promise<void> {
   console.log(`[SolArb Watcher] Monitoring ${TOKEN_PAIRS.length} pairs: ${TOKEN_PAIRS.map((p) => p.name).join(", ")}`);
   console.log(`[SolArb Watcher] Poll interval: ${POLL_INTERVAL_MS}ms`);
 
+  const bootstrapPeers = process.env.BOOTSTRAP_PEERS?.split(",").filter(Boolean) || [];
+
   const node = await createP2PNode({
     listenPort: P2P_PORT,
     nodeName: NODE_ID,
+    bootstrapPeers,
   });
 
   // Watcher also subscribes so gossipsub can form a mesh with peers.
