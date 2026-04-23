@@ -15,5 +15,5 @@ export declare const TOKEN_PAIRS: TokenPairConfig[];
 /** libp2p gossipsub topic for price data */
 export declare const PRICE_TOPIC = "solarb/dex-prices/1.0.0";
 /** Polling interval for Jupiter API (ms) */
-export declare const POLL_INTERVAL_MS = 5000;
+export declare const POLL_INTERVAL_MS = 15000;
 //# sourceMappingURL=constants.d.ts.map

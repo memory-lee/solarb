@@ -35,5 +35,5 @@ export const TOKEN_PAIRS = [
 /** libp2p gossipsub topic for price data */
 export const PRICE_TOPIC = "solarb/dex-prices/1.0.0";
 /** Polling interval for Jupiter API (ms) */
-export const POLL_INTERVAL_MS = 5_000;
+export const POLL_INTERVAL_MS = 15_000;
 //# sourceMappingURL=constants.js.map

@@ -38,7 +38,7 @@ export async function fetchJupiterQuotes(pair) {
         excludeDexes.push(...labels);
         // Small delay to respect rate limits (free tier = 1 RPS)
         if (attempt < 2) {
-            await sleep(300);
+            await sleep(500);
         }
     }
     return prices;

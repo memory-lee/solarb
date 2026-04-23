@@ -1,0 +1,752 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>solarb — solana arbitrage monitor</title>
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Cutive+Mono&family=JetBrains+Mono:ital,wght@0,400;0,500;0,700;1,400;1,500&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --bg:       #fbf3df;
+    --bg-alt:   #f5ecc9;
+    --bg-deep:  #efe4bc;
+    --rule:     #d8cc9b;
+    --rule-2:   #bdb078;
+
+    --ink:      #4b4738;
+    --ink-dim:  #7a7458;
+    --ink-faint:#a49e78;
+
+    --orange:   #cb4b16;
+    --orange-2: #b04215;
+    --green:    #859900;
+    --green-2:  #6c7d00;
+    --red:      #b94b3c;
+    --cyan:     #3a8a88;
+    --violet:   #7a5aa6;
+    --yellow:   #b58900;
+
+    --mono: "JetBrains Mono", "Cutive Mono", ui-monospace, Menlo, monospace;
+  }
+
+  html, body { background: var(--bg); color: var(--ink); }
+  body {
+    font-family: var(--mono);
+    font-size: 13px;
+    line-height: 1.55;
+    margin: 0;
+    padding: 0;
+    font-feature-settings: "calt" 1, "liga" 0;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .frame {
+    max-width: 1240px;
+    margin: 0 auto;
+    padding: 48px 40px 120px;
+    box-sizing: border-box;
+    background: linear-gradient(var(--bg), var(--bg));
+    border-left: 1px dashed var(--rule);
+    border-right: 1px dashed var(--rule);
+    min-height: 100vh;
+    position: relative;
+  }
+
+  .masthead { text-align: center; padding: 28px 0 12px; }
+  .masthead h1 {
+    font-family: var(--mono);
+    font-weight: 400;
+    color: var(--orange);
+    font-size: 84px;
+    letter-spacing: -1px;
+    margin: 0;
+    line-height: 1;
+  }
+  .masthead h1 .dot-char { color: var(--green); }
+  .masthead .tag {
+    font-style: italic;
+    color: var(--ink-dim);
+    font-size: 15px;
+    margin-top: 6px;
+  }
+  .masthead .tag .a { color: var(--green); }
+  .masthead .tag .b { color: var(--orange); }
+
+  .cta-row {
+    display: flex; gap: 32px; justify-content: center;
+    margin: 22px 0 10px;
+    flex-wrap: wrap;
+  }
+
+  .pilcrow {
+    color: var(--rule-2);
+    font-size: 22px;
+    margin: 34px 0 10px;
+    user-select: none;
+  }
+
+  .row { display: grid; gap: 24px; }
+  .row.cols-2 { grid-template-columns: 1fr 1fr; }
+  .row.cols-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .row.asym   { grid-template-columns: 1fr 1.15fr; }
+
+  .kicker {
+    font-style: italic;
+    color: var(--ink-dim);
+    font-size: 12.5px;
+    margin-bottom: 6px;
+  }
+  h2.sect {
+    font-family: var(--mono);
+    font-weight: 400;
+    color: var(--orange);
+    font-size: 28px;
+    margin: 0 0 2px;
+    letter-spacing: -0.3px;
+  }
+  h2.sect .alt { color: var(--green); }
+  h3.sect {
+    font-family: var(--mono);
+    font-weight: 500;
+    color: var(--ink);
+    font-size: 15px;
+    margin: 0 0 8px;
+  }
+  .prose { color: var(--ink); font-size: 13px; }
+  .prose .c-or { color: var(--orange); }
+  .prose .c-gr { color: var(--green); }
+  .prose .c-cy { color: var(--cyan); }
+
+  table.t {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12.5px;
+  }
+  table.t th, table.t td {
+    text-align: left;
+    padding: 6px 10px;
+    border-bottom: 1px dashed var(--rule);
+    vertical-align: middle;
+  }
+  table.t th {
+    font-weight: 500;
+    color: var(--ink-dim);
+    font-style: italic;
+    font-size: 11.5px;
+  }
+  table.t td.num { font-variant-numeric: tabular-nums; text-align: right; }
+  table.t tr:hover td { background: rgba(216,204,155,0.18); }
+
+  .pill {
+    display: inline-block;
+    padding: 1px 7px;
+    border: 1px solid var(--rule-2);
+    color: var(--ink-dim);
+    font-size: 11px;
+    margin-right: 2px;
+  }
+  .pill.or { color: var(--orange); border-color: var(--orange); }
+  .pill.gr { color: var(--green); border-color: var(--green); }
+  .pill.cy { color: var(--cyan); border-color: var(--cyan); }
+  .pill.vi { color: var(--violet); border-color: var(--violet); }
+  .pill.rd { color: var(--red); border-color: var(--red); }
+
+  .status-dot {
+    display: inline-block;
+    width: 7px; height: 7px;
+    border-radius: 50%;
+    background: var(--ink-faint);
+    margin-right: 6px;
+    vertical-align: baseline;
+    position: relative;
+    top: -1px;
+  }
+  .status-dot.ok   { background: var(--green); box-shadow: 0 0 0 2px rgba(133,153,0,0.18); }
+  .status-dot.warn { background: var(--yellow); }
+  .status-dot.bad  { background: var(--red); }
+  .status-dot.live { animation: pulse 1.4s ease-in-out infinite; }
+  @keyframes pulse {
+    0%, 100% { box-shadow: 0 0 0 2px rgba(133,153,0,0.18); }
+    50%      { box-shadow: 0 0 0 5px rgba(133,153,0,0.04); }
+  }
+
+  .spark {
+    font-family: var(--mono);
+    color: var(--green);
+    letter-spacing: 0;
+    font-size: 13px;
+    line-height: 1;
+    white-space: pre;
+  }
+  .spark.or { color: var(--orange); }
+
+  .num-big {
+    font-size: 38px;
+    letter-spacing: -0.5px;
+    color: var(--ink);
+    line-height: 1;
+    font-variant-numeric: tabular-nums;
+  }
+  .num-big.or { color: var(--orange); }
+  .num-big.gr { color: var(--green); }
+  .sub { color: var(--ink-dim); font-size: 12px; font-style: italic; }
+
+  .opp {
+    padding: 10px 0;
+    border-bottom: 1px dashed var(--rule);
+  }
+  .opp:last-child { border-bottom: none; }
+  .opp .hdr {
+    display: flex; justify-content: space-between; align-items: baseline;
+    gap: 12px;
+  }
+  .opp .pair { color: var(--orange); font-weight: 500; }
+  .opp .flow { color: var(--ink-dim); }
+  .opp .flow .arrow { color: var(--green); }
+  .opp .sprd { color: var(--green); font-variant-numeric: tabular-nums; }
+  .opp.hot .sprd { color: var(--orange); font-weight: 500; }
+  .opp .meta {
+    color: var(--ink-faint);
+    font-size: 11.5px;
+    margin-top: 2px;
+    font-style: italic;
+  }
+  .opp .bar {
+    display: flex; align-items: center; gap: 10px; margin-top: 4px;
+  }
+  .opp .bar .track {
+    flex: 1; height: 4px;
+    background: repeating-linear-gradient(
+      to right,
+      var(--rule) 0 4px, transparent 4px 7px
+    );
+    position: relative;
+  }
+  .opp .bar .track .fill {
+    position: absolute; top: 0; bottom: 0; left: 0;
+    background: var(--green);
+  }
+  .opp.hot .bar .track .fill { background: var(--orange); }
+  .opp .bar .thr {
+    position: absolute; top: -3px; bottom: -3px;
+    width: 1px; background: var(--ink-dim);
+  }
+
+  .stat-card .label {
+    font-style: italic;
+    color: var(--ink-dim);
+    font-size: 12px;
+    margin-bottom: 4px;
+  }
+
+  .pair-card {
+    padding: 14px 16px;
+    border: 1px solid var(--rule);
+    background: var(--bg-alt);
+    position: relative;
+    box-sizing: border-box;
+    min-width: 0;
+  }
+  .pair-card .corner {
+    position: absolute;
+    top: -8px; left: 12px;
+    background: var(--bg);
+    padding: 0 6px;
+    color: var(--orange);
+    font-size: 12px;
+    font-style: italic;
+  }
+  .pair-card table.t { table-layout: fixed; width: 100%; }
+  .pair-card table.t th, .pair-card table.t td {
+    padding: 3px 6px;
+    border-bottom: 1px dotted var(--rule);
+  }
+  .pair-card .spark { overflow: hidden; text-overflow: clip; }
+  .pair-card .best-buy  { color: var(--green); }
+  .pair-card .best-sell { color: var(--orange); }
+  .pair-card table.t tr.stale td { color: var(--ink-faint); opacity: 0.6; }
+  .pair-card table.t tr.stale td .pill { color: var(--ink-faint); border-color: var(--rule); }
+  .pair-card table.t tr.stale td .best-buy,
+  .pair-card table.t tr.stale td .best-sell { color: var(--ink-faint); }
+
+  .foot {
+    text-align: center;
+    color: var(--ink-faint);
+    font-style: italic;
+    margin-top: 50px;
+    font-size: 12px;
+  }
+  .foot .arrow { color: var(--green); }
+
+  .muted { color: var(--ink-dim); }
+  .em { font-style: italic; }
+  .sep { color: var(--rule-2); margin: 0 6px; }
+  hr.dash { border: 0; border-top: 1px dashed var(--rule); margin: 0; }
+
+  .ascii {
+    white-space: pre;
+    color: var(--ink-faint);
+    font-size: 13px;
+    line-height: 1.25;
+  }
+
+  ::selection { background: rgba(203,75,22,0.2); }
+</style>
+</head>
+<body>
+<div class="frame">
+
+  <header class="masthead">
+    <h1>solarb<span class="dot-char">.</span></h1>
+    <div class="tag">
+      <span class="a">a dashboard for</span> solana dex arbitrage <span class="b">/ live spread monitor</span>
+    </div>
+    <div class="cta-row">
+      <span class="sub" id="last-updated">waiting for first poll…</span>
+    </div>
+  </header>
+
+  <div class="pilcrow">¶</div>
+
+  <!-- ===== top stats ===== -->
+  <div class="row cols-3" id="stat-row">
+    <div class="stat-card">
+      <div class="label">opportunities detected</div>
+      <div class="num-big or" id="stat-opps">--</div>
+      <div class="sub" id="stat-opps-sub">significant arbitrage events</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">average spread</div>
+      <div class="num-big gr" id="stat-avg">--<span style="font-size:18px; color:var(--ink-dim)"> %</span></div>
+      <div class="sub" id="stat-avg-sub">mean across pairs</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">detector status</div>
+      <div class="num-big" id="stat-conn">
+        <span class="status-dot"></span><span id="stat-conn-text">offline</span>
+      </div>
+      <div class="sub" id="stat-conn-sub">connecting…</div>
+    </div>
+  </div>
+
+  <div class="pilcrow">¶</div>
+
+  <!-- ===== § 01 live quotes ===== -->
+  <div class="row asym">
+    <div>
+      <div class="kicker">§ 01 — live quotes</div>
+      <h2 class="sect">live<span class="alt"> quotes</span></h2>
+      <p class="prose muted">
+        prices are polled from <span class="c-gr">jupiter swap api</span> and normalized into
+        <span class="c-or">DexPrice</span> records. each pair shows per-dex quotes, drift from
+        the best-buy price, and a recent spread sparkline.
+      </p>
+    </div>
+  </div>
+
+  <div style="margin-top:18px">
+    <div class="row cols-3" id="price-grid">
+      <div class="muted em">loading prices…</div>
+    </div>
+  </div>
+
+  <div class="pilcrow">¶</div>
+
+  <!-- ===== § 02 opportunity feed ===== -->
+  <div class="row asym" id="feed">
+    <div>
+      <div class="kicker">§ 02 — detections</div>
+      <h2 class="sect">opportunity<span class="alt"> feed</span></h2>
+      <p class="prose muted">
+        a detection clears the bar when spread &gt; <span class="c-or">μ + kσ</span>.
+        those are persisted and published; the rest stay in the rolling buffer.
+      </p>
+      <div class="ascii" style="margin-top:10px">
+     │
+     │▂    μ
+     │▂▃▂▃_____ ▂ ▂ ▃ ▂ ▃▂▃____
+     │            ▄  ▅    ▄  ▅
+     │              ▇  ▇     ▇   ← significant
+     │──────────────────────────── t</div>
+    </div>
+    <div>
+      <div id="opp-feed">
+        <div class="muted em">waiting for first detection…</div>
+      </div>
+    </div>
+  </div>
+
+  <div class="pilcrow">¶</div>
+
+  <!-- ===== § 04 adaptive thresholds ===== -->
+  <div class="row asym">
+    <div>
+      <div class="kicker">§ 04 — analyzer</div>
+      <h3 class="sect">adaptive thresholds</h3>
+      <p class="prose muted">
+        per-pair rolling statistics from the detector. threshold =
+        <span class="c-or">max(μ + kσ, min)</span>. samples is the size of the rolling window.
+      </p>
+    </div>
+    <div>
+      <table class="t" id="threshold-table">
+        <thead>
+          <tr>
+            <th>pair</th>
+            <th style="text-align:right">μ mean</th>
+            <th style="text-align:right">σ std</th>
+            <th style="text-align:right">threshold</th>
+            <th style="text-align:right">samples</th>
+          </tr>
+        </thead>
+        <tbody id="threshold-body">
+          <tr><td colspan="5" class="muted em">loading thresholds…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="pilcrow">¶</div>
+
+  <div class="foot">
+    — built with mononoki energy <span class="arrow">→</span> solarized palette —<br/>
+    polling <span id="foot-base">same-origin</span> every 5s
+  </div>
+
+</div>
+
+<script>
+  const API_BASE = "http://35.185.70.108:3000";
+  const POLL_MS = 5000;
+
+  const DEX_TAGS = {
+    "Raydium":  "or",
+    "Orca":     "cy",
+    "Meteora":  "vi",
+    "Phoenix":  "gr",
+    "Lifinity": "rd",
+    "Jupiter":  "or",
+  };
+  function dexTag(dex) { return DEX_TAGS[dex] || ""; }
+
+  const BLOCKS = ["▁","▂","▃","▄","▅","▆","▇","█"];
+  function sparkline(arr, width) {
+    if (!arr || arr.length === 0) return "";
+    const slice = arr.slice(-width);
+    const min = Math.min.apply(null, slice);
+    const max = Math.max.apply(null, slice);
+    const span = max - min || 1;
+    return slice.map(function (v) {
+      const idx = Math.floor(((v - min) / span) * (BLOCKS.length - 1));
+      return BLOCKS[Math.max(0, Math.min(BLOCKS.length - 1, idx))];
+    }).join("");
+  }
+
+  function fmt(n, dp) {
+    if (n == null || isNaN(n)) return "--";
+    return Number(n).toLocaleString(undefined, {
+      minimumFractionDigits: dp,
+      maximumFractionDigits: dp,
+    });
+  }
+
+  function pickDp(price) {
+    if (price == null || isNaN(price)) return 4;
+    if (price >= 100) return 3;
+    if (price >= 1)   return 4;
+    return 6;
+  }
+
+  function ago(ms) {
+    const s = Math.max(0, Math.floor((Date.now() - ms) / 1000));
+    if (s < 1)  return "now";
+    if (s < 60) return s + "s";
+    const m = Math.floor(s / 60);
+    return m + "m " + (s % 60) + "s";
+  }
+
+  function escapeHtml(str) {
+    return String(str).replace(/[&<>"']/g, function (c) {
+      return { "&":"&amp;", "<":"&lt;", ">":"&gt;", '"':"&quot;", "'":"&#39;" }[c];
+    });
+  }
+
+  // local ring buffer of spreads per pair, for sparklines
+  const spreadHistory = {};
+  const SPARK_LEN = 40;
+  function pushSpread(pair, spread) {
+    if (!spreadHistory[pair]) spreadHistory[pair] = [];
+    spreadHistory[pair].push(spread);
+    if (spreadHistory[pair].length > 80) spreadHistory[pair].shift();
+  }
+
+  async function fetchJson(path) {
+    const res = await fetch(API_BASE + path, { cache: "no-store" });
+    if (!res.ok) throw new Error(path + " -> " + res.status);
+    return res.json();
+  }
+
+  function renderPrices(pricesByPair) {
+    const grid = document.getElementById("price-grid");
+    const pairs = Object.keys(pricesByPair).sort();
+    if (pairs.length === 0) {
+      grid.innerHTML = '<div class="muted em">no price data yet…</div>';
+      return { avgSpread: null };
+    }
+
+    let spreadSum = 0;
+    let spreadCount = 0;
+    const cards = [];
+
+    const STALE_MS = 60_000;
+    const now = Date.now();
+
+    for (const pair of pairs) {
+      const allRows = (pricesByPair[pair] || []).slice();
+      if (allRows.length === 0) continue;
+
+      // Only show the 3 most recent quotes per pair.
+      const rows = allRows
+        .slice()
+        .sort(function (a, b) { return b.timestamp - a.timestamp; })
+        .slice(0, 3);
+
+      const sorted = rows.slice().sort(function (a, b) { return a.price - b.price; });
+      const low  = sorted[0];
+      const high = sorted[sorted.length - 1];
+      const spread = low.price > 0 ? ((high.price - low.price) / low.price) * 100 : 0;
+      pushSpread(pair, spread);
+      spreadSum += spread;
+      spreadCount += 1;
+
+      const dp = pickDp(low.price);
+
+      const tbody = rows.map(function (r) {
+        const isLow  = r.dex === low.dex  && rows.length > 1;
+        const isHigh = r.dex === high.dex && rows.length > 1;
+        const tag = dexTag(r.dex);
+        const drift = low.price > 0 ? ((r.price - low.price) / low.price) * 100 : 0;
+        const isStale = (now - r.timestamp) > STALE_MS;
+        const color = isStale
+          ? "var(--ink-faint)"
+          : (isHigh ? "var(--orange)" : isLow ? "var(--green)" : "var(--ink-dim)");
+        return (
+          '<tr' + (isStale ? ' class="stale"' : '') + '>' +
+            '<td>' +
+              '<span class="pill ' + tag + '">' + escapeHtml(r.dex) + '</span>' +
+              (isLow  ? '<span class="best-buy"> buy</span>'   : '') +
+              (isHigh ? '<span class="best-sell"> sell</span>' : '') +
+            '</td>' +
+            '<td class="num">' + fmt(r.price, dp) + '</td>' +
+            '<td class="num" style="color:' + color + '">' + drift.toFixed(3) + '%</td>' +
+            '<td class="num muted">' + escapeHtml(ago(r.timestamp)) + '</td>' +
+          '</tr>'
+        );
+      }).join("");
+
+      const spreadColor = spread > 0.05 ? "var(--orange)" : "var(--green)";
+      const spark = sparkline(spreadHistory[pair] || [], SPARK_LEN);
+
+      cards.push(
+        '<div class="pair-card">' +
+          '<div class="corner">' + escapeHtml(pair) + '</div>' +
+          '<div style="display:flex; justify-content:space-between; align-items:baseline; margin-bottom:6px">' +
+            '<div class="sub">quotes via jupiter</div>' +
+            '<div class="sub">spread <span style="color:' + spreadColor + '">' + spread.toFixed(3) + '%</span></div>' +
+          '</div>' +
+          '<table class="t">' +
+            '<thead><tr>' +
+              '<th>dex</th>' +
+              '<th style="text-align:right">price</th>' +
+              '<th style="text-align:right">Δ</th>' +
+              '<th style="text-align:right">t</th>' +
+            '</tr></thead>' +
+            '<tbody>' + tbody + '</tbody>' +
+          '</table>' +
+          '<div style="margin-top:8px; display:flex; align-items:center; gap:8px">' +
+            '<span class="sub">spread recent</span>' +
+            '<span class="spark or">' + escapeHtml(spark) + '</span>' +
+          '</div>' +
+        '</div>'
+      );
+    }
+
+    grid.innerHTML = cards.join("") || '<div class="muted em">no price data yet…</div>';
+    return { avgSpread: spreadCount ? spreadSum / spreadCount : null };
+  }
+
+  function renderOpportunities(opps, thresholds) {
+    const container = document.getElementById("opp-feed");
+    if (!opps || opps.length === 0) {
+      container.innerHTML = '<div class="muted em">waiting for first detection…</div>';
+      return { total: 0, significant: 0 };
+    }
+
+    const sorted = opps.slice().sort(function (a, b) { return b.timestamp - a.timestamp; });
+    const significant = sorted.filter(function (o) { return o.isSignificant; }).length;
+
+    const html = sorted.slice(0, 12).map(function (o) {
+      const thr = (thresholds && thresholds[o.pair] && thresholds[o.pair].threshold) || 0.05;
+      const maxScale = Math.max(thr * 3, o.spreadPercent * 1.1, 0.001);
+      const ratio = Math.min(1, o.spreadPercent / maxScale);
+      const thrPos = Math.min(100, (thr / maxScale) * 100);
+      const hot = !!o.isSignificant;
+      const dp = pickDp(o.buyPrice);
+      return (
+        '<div class="opp ' + (hot ? "hot" : "") + '">' +
+          '<div class="hdr">' +
+            '<div>' +
+              '<span class="pair">' + escapeHtml(o.pair) + '</span>' +
+              '<span class="sep">│</span>' +
+              '<span class="flow">' +
+                'buy <span style="color:var(--green)">' + escapeHtml(o.buyDex) + '</span>' +
+                '<span class="arrow"> → </span>' +
+                'sell <span style="color:var(--orange)">' + escapeHtml(o.sellDex) + '</span>' +
+              '</span>' +
+            '</div>' +
+            '<div class="sprd">' + o.spreadPercent.toFixed(3) + '%</div>' +
+          '</div>' +
+          '<div class="bar">' +
+            '<div class="track">' +
+              '<div class="fill" style="width:' + (ratio * 100).toFixed(1) + '%"></div>' +
+              '<div class="thr" style="left:' + thrPos.toFixed(1) + '%" title="adaptive threshold"></div>' +
+            '</div>' +
+          '</div>' +
+          '<div class="meta">' +
+            escapeHtml(fmt(o.buyPrice, dp)) + ' → ' + escapeHtml(fmt(o.sellPrice, dp)) +
+            '<span class="sep">·</span>' +
+            (hot
+              ? '<span style="color:var(--orange)">significant · broadcast</span>'
+              : '<span>below threshold · recorded</span>') +
+            '<span class="sep">·</span>' +
+            escapeHtml(ago(o.timestamp)) + ' ago' +
+          '</div>' +
+        '</div>'
+      );
+    }).join("");
+
+    container.innerHTML = html;
+    return { total: sorted.length, significant: significant };
+  }
+
+  function renderThresholds(thresholds) {
+    const body = document.getElementById("threshold-body");
+    const pairs = Object.keys(thresholds || {}).sort();
+    if (pairs.length === 0) {
+      body.innerHTML = '<tr><td colspan="5" class="muted em">no threshold data yet…</td></tr>';
+      return;
+    }
+    body.innerHTML = pairs.map(function (pair) {
+      const t = thresholds[pair];
+      return (
+        '<tr>' +
+          '<td><span class="pill or">' + escapeHtml(pair) + '</span></td>' +
+          '<td class="num">' + (t.mean != null ? t.mean.toFixed(4) + '%' : '--') + '</td>' +
+          '<td class="num">' + (t.std  != null ? t.std.toFixed(4) : '--') + '</td>' +
+          '<td class="num" style="color:var(--orange)">' +
+            (t.threshold != null ? t.threshold.toFixed(4) + '%' : '--') +
+          '</td>' +
+          '<td class="num muted">' + (t.samples != null ? t.samples : 0) + '</td>' +
+        '</tr>'
+      );
+    }).join("");
+  }
+
+  function renderStats(opts) {
+    document.getElementById("stat-opps").textContent = String(opts.totalOpps);
+    document.getElementById("stat-opps-sub").innerHTML =
+      '<span style="color:var(--orange)">' + opts.sigOpps + '</span> flagged as significant';
+
+    if (opts.avgSpread == null) {
+      document.getElementById("stat-avg").innerHTML =
+        '--<span style="font-size:18px; color:var(--ink-dim)"> %</span>';
+      document.getElementById("stat-avg-sub").textContent = 'awaiting quotes';
+    } else {
+      document.getElementById("stat-avg").innerHTML =
+        opts.avgSpread.toFixed(3) +
+        '<span style="font-size:18px; color:var(--ink-dim)"> %</span>';
+      document.getElementById("stat-avg-sub").textContent =
+        'mean across ' + opts.pairCount + ' pair' + (opts.pairCount === 1 ? '' : 's');
+    }
+
+    const dot = document.querySelector("#stat-conn .status-dot");
+    const text = document.getElementById("stat-conn-text");
+    const sub = document.getElementById("stat-conn-sub");
+    dot.classList.remove("ok", "warn", "bad", "live");
+    if (opts.connected) {
+      dot.classList.add("ok", "live");
+      text.textContent = "online";
+      text.style.color = "var(--green)";
+      if (opts.uptime != null) {
+        sub.textContent = "uptime " + formatUptime(opts.uptime);
+      } else {
+        sub.textContent = "detector running";
+      }
+    } else {
+      dot.classList.add("bad");
+      text.textContent = "offline";
+      text.style.color = "var(--red)";
+      sub.textContent = opts.error || "detector unreachable";
+    }
+  }
+
+  function formatUptime(secs) {
+    secs = Math.floor(secs);
+    const d = Math.floor(secs / 86400);
+    const h = Math.floor((secs % 86400) / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    const s = secs % 60;
+    if (d > 0) return d + "d " + h + "h " + m + "m";
+    if (h > 0) return h + "h " + m + "m";
+    if (m > 0) return m + "m " + s + "s";
+    return s + "s";
+  }
+
+  async function poll() {
+    try {
+      const [prices, opportunities, thresholds, status] = await Promise.all([
+        fetchJson("/api/prices"),
+        fetchJson("/api/opportunities"),
+        fetchJson("/api/thresholds"),
+        fetchJson("/api/status"),
+      ]);
+
+      const priceResult = renderPrices(prices || {});
+      const oppResult = renderOpportunities(opportunities || [], thresholds || {});
+      renderThresholds(thresholds || {});
+
+      renderStats({
+        totalOpps: oppResult.total,
+        sigOpps: oppResult.significant,
+        avgSpread: priceResult.avgSpread,
+        pairCount: Object.keys(prices || {}).length,
+        connected: true,
+        uptime: status && typeof status.uptime === "number" ? status.uptime : null,
+      });
+
+      const now = new Date();
+      document.getElementById("last-updated").textContent =
+        "last updated " + now.toLocaleTimeString("en-GB", { hour12: false });
+    } catch (err) {
+      renderStats({
+        totalOpps: 0,
+        sigOpps: 0,
+        avgSpread: null,
+        pairCount: 0,
+        connected: false,
+        error: String(err && err.message ? err.message : err),
+      });
+      document.getElementById("last-updated").textContent =
+        "poll failed · retrying in " + (POLL_MS / 1000) + "s";
+    }
+  }
+
+  document.getElementById("foot-base").textContent = API_BASE || "same-origin";
+
+  poll();
+  setInterval(poll, POLL_MS);
+</script>
+</body>
+</html>

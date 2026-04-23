@@ -17,9 +17,21 @@ export function startApiServer(analyzer, port = 3000) {
         const url = req.url || "/";
         try {
             if (url === "/api/prices") {
-                // Current prices for all pairs
+                // Only return prices updated within the last 30s, top 3 most recent per pair.
+                const PRICE_MAX_AGE_MS = 30_000;
+                const cutoff = Date.now() - PRICE_MAX_AGE_MS;
+                const all = analyzer.getLatestPrices();
+                const filtered = {};
+                for (const [pair, prices] of Object.entries(all)) {
+                    const fresh = prices
+                        .filter((p) => p.timestamp >= cutoff)
+                        .sort((a, b) => b.timestamp - a.timestamp)
+                        .slice(0, 3);
+                    if (fresh.length > 0)
+                        filtered[pair] = fresh;
+                }
                 res.writeHead(200);
-                res.end(JSON.stringify(analyzer.getLatestPrices()));
+                res.end(JSON.stringify(filtered));
             }
             else if (url === "/api/opportunities") {
                 // Significant arbitrage opportunities
