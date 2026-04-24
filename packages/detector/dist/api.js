@@ -1,4 +1,6 @@
 import { createServer } from "http";
+import { readFileSync } from "fs";
+import { resolve } from "path";
 /**
  * Simple REST API server for the dashboard.
  * No external dependencies — uses Node.js built-in http module.
@@ -16,7 +18,13 @@ export function startApiServer(analyzer, port = 3000) {
         }
         const url = req.url || "/";
         try {
-            if (url === "/api/prices") {
+            if (url === "/") {
+                const html = readFileSync(resolve(process.cwd(), "packages/dashboard/index.html"), "utf-8");
+                res.setHeader("Content-Type", "text/html");
+                res.writeHead(200);
+                res.end(html);
+            }
+            else if (url === "/api/prices") {
                 // Only return prices updated within the last 30s, top 3 most recent per pair.
                 const PRICE_MAX_AGE_MS = 30_000;
                 const cutoff = Date.now() - PRICE_MAX_AGE_MS;
