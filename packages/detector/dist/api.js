@@ -1,6 +1,9 @@
 import { createServer } from "http";
 import { readFileSync } from "fs";
-import { resolve } from "path";
+import { dirname, resolve } from "path";
+import { fileURLToPath } from "node:url";
+const __dirname = dirname(fileURLToPath(import.meta.url));
+const dashboardPath = resolve(__dirname, "../../dashboard/index.html");
 /**
  * Simple REST API server for the dashboard.
  * No external dependencies — uses Node.js built-in http module.
@@ -19,7 +22,7 @@ export function startApiServer(analyzer, port = 3000) {
         const url = req.url || "/";
         try {
             if (url === "/") {
-                const html = readFileSync(resolve(process.cwd(), "packages/dashboard/index.html"), "utf-8");
+                const html = readFileSync(dashboardPath, "utf-8");
                 res.setHeader("Content-Type", "text/html");
                 res.writeHead(200);
                 res.end(html);
