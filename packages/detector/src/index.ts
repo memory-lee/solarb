@@ -20,10 +20,10 @@ const analyzer = new SpreadAnalyzer({
 /**
  * Process incoming prices: analyze spreads, log, and persist significant ones.
  */
-function processPrices(prices: DexPrice[]): void {
+async function processPrices(prices: DexPrice[]): Promise<void> {
   if (prices.length === 0) return;
 
-  const opportunities = analyzer.analyze(prices);
+  const opportunities = await analyzer.analyze(prices);
   logAnalysis(opportunities);
 }
 
@@ -31,7 +31,7 @@ function processPrices(prices: DexPrice[]): void {
  * Format and log analysis results.
  */
 function logAnalysis(
-  opportunities: ReturnType<SpreadAnalyzer["analyze"]>
+  opportunities: Awaited<ReturnType<SpreadAnalyzer["analyze"]>>
 ): void {
   const timestamp = new Date().toISOString();
   console.log(`\n--- ${timestamp} | SolArb Detector ---`);
@@ -49,7 +49,14 @@ function logAnalysis(
   for (const [pair, opps] of byPair) {
     const opp = opps[0]; // One per pair
     const th = thresholds[pair];
-    const flag = opp.isSignificant ? " ** ALERT **" : "";
+    const statDetected = th ? opp.spreadPercent > th.threshold : false;
+    let source = "";
+    if (opp.isSignificant) {
+      if (statDetected && opp.mlDetected) source = "BOTH";
+      else if (opp.mlDetected) source = "ML";
+      else source = "STAT";
+    }
+    const flag = opp.isSignificant ? ` ** ALERT [${source}] **` : "";
 
     console.log(`  ${pair}:`);
     console.log(
@@ -111,7 +118,9 @@ async function main(): Promise<void> {
       console.log(
         `[P2P] Received ${msg.prices.length} prices from ${msg.nodeId} (msg #${messageCount})`
       );
-      processPrices(msg.prices);
+      processPrices(msg.prices).catch((err) =>
+        console.error("[Detector] processPrices failed:", err)
+      );
     });
   } catch (err) {
     console.error("[P2P] Initialization failed, continuing with REST API only:", err);

@@ -1,3 +1,4 @@
+import { predictAnomaly } from "./vertex-ai.js";
 /**
  * Rolling statistics tracker for a single token pair's spread history.
  * Uses a fixed-size window to compute mean and standard deviation,
@@ -45,11 +46,19 @@ class SpreadHistory {
         return Math.max(this.mean + multiplier * this.std, minThreshold);
     }
 }
+/** Pair index used as the third feature for the Vertex AI model */
+const PAIR_INDEX = {
+    "SOL/USDC": 0,
+    "SOL/USDT": 1,
+    "BONK/SOL": 2,
+};
 export class SpreadAnalyzer {
     /** Per-pair spread history for adaptive thresholds */
     histories = new Map();
     /** Latest prices per pair per DEX */
     priceTable = new Map();
+    /** Previous spread per pair, used to compute spread velocity for ML features */
+    lastSpread = new Map();
     /** All detected opportunities */
     opportunities = [];
     /** Threshold multiplier (number of std deviations) */
@@ -65,10 +74,11 @@ export class SpreadAnalyzer {
     }
     /**
      * Ingest a batch of prices from a single poll cycle and analyze spreads.
-     * Returns any new arbitrage opportunities detected.
+     * Runs both statistical detection (mean + 2σ) and Vertex AI anomaly
+     * detection in parallel; an opportunity is flagged significant if either
+     * one fires. Falls back to stat-only on Vertex AI failure.
      */
-    analyze(prices) {
-        const newOpportunities = [];
+    async analyze(prices) {
         // Update price table
         for (const price of prices) {
             if (!this.priceTable.has(price.pair)) {
@@ -76,36 +86,71 @@ export class SpreadAnalyzer {
             }
             this.priceTable.get(price.pair).set(price.dex, price);
         }
-        // Analyze each pair
+        const candidates = [];
         for (const [pair, dexPrices] of this.priceTable) {
             const priceList = Array.from(dexPrices.values());
             if (priceList.length < 2)
                 continue;
-            // Find best buy (lowest price) and best sell (highest price)
             const sorted = [...priceList].sort((a, b) => a.price - b.price);
             const low = sorted[0];
             const high = sorted[sorted.length - 1];
             const spreadPercent = ((high.price - low.price) / low.price) * 100;
-            // Update history
             if (!this.histories.has(pair)) {
                 this.histories.set(pair, new SpreadHistory());
             }
             const history = this.histories.get(pair);
             history.add(spreadPercent);
-            // Check against adaptive threshold
             const threshold = history.getThreshold(this.multiplier, this.minThreshold);
-            const isSignificant = spreadPercent > threshold;
+            const statSignificant = spreadPercent > threshold;
+            const prev = this.lastSpread.get(pair) ?? spreadPercent;
+            const velocity = spreadPercent - prev;
+            this.lastSpread.set(pair, spreadPercent);
+            candidates.push({ pair, low, high, spreadPercent, velocity, statSignificant });
+        }
+        // Build ML instances only for pairs the model was trained on
+        const instances = [];
+        const mlIndices = [];
+        for (let i = 0; i < candidates.length; i++) {
+            const c = candidates[i];
+            const pairIndex = PAIR_INDEX[c.pair];
+            if (pairIndex === undefined)
+                continue;
+            instances.push([c.spreadPercent, c.velocity, pairIndex]);
+            mlIndices.push(i);
+        }
+        let predictions = null;
+        if (instances.length > 0) {
+            try {
+                predictions = await predictAnomaly(instances);
+            }
+            catch (err) {
+                console.error("[VertexAI] Prediction failed, falling back to statistical detection:", err);
+                predictions = null;
+            }
+        }
+        const mlFlags = new Map();
+        if (predictions) {
+            for (let i = 0; i < mlIndices.length; i++) {
+                mlFlags.set(mlIndices[i], predictions[i] === -1);
+            }
+        }
+        const newOpportunities = [];
+        const now = Date.now();
+        for (let i = 0; i < candidates.length; i++) {
+            const c = candidates[i];
+            const mlDetected = mlFlags.get(i) ?? false;
+            const isSignificant = c.statSignificant || mlDetected;
             const opportunity = {
-                pair,
-                buyDex: low.dex,
-                sellDex: high.dex,
-                buyPrice: low.price,
-                sellPrice: high.price,
-                spreadPercent,
-                timestamp: Date.now(),
+                pair: c.pair,
+                buyDex: c.low.dex,
+                sellDex: c.high.dex,
+                buyPrice: c.low.price,
+                sellPrice: c.high.price,
+                spreadPercent: c.spreadPercent,
+                timestamp: now,
                 isSignificant,
+                mlDetected,
             };
-            // Always record, but flag significance
             newOpportunities.push(opportunity);
             if (isSignificant) {
                 this.opportunities.push(opportunity);

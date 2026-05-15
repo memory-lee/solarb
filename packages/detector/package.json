@@ -10,6 +10,7 @@
     "dev": "ts-node src/index.ts"
   },
   "dependencies": {
-    "@solarb/shared": "*"
+    "@solarb/shared": "*",
+    "google-auth-library": "^10.6.2"
   }
 }

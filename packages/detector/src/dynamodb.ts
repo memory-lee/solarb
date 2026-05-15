@@ -26,6 +26,7 @@ export async function saveOpportunity(opp: ArbitrageOpportunity): Promise<void> 
           sellPrice: opp.sellPrice,
           spreadPercent: opp.spreadPercent,
           isSignificant: opp.isSignificant,
+          mlDetected: opp.mlDetected,
         },
       })
     );

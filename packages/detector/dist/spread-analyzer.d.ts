@@ -4,6 +4,8 @@ export declare class SpreadAnalyzer {
     private histories;
     /** Latest prices per pair per DEX */
     private priceTable;
+    /** Previous spread per pair, used to compute spread velocity for ML features */
+    private lastSpread;
     /** All detected opportunities */
     private opportunities;
     /** Threshold multiplier (number of std deviations) */
@@ -19,9 +21,11 @@ export declare class SpreadAnalyzer {
     });
     /**
      * Ingest a batch of prices from a single poll cycle and analyze spreads.
-     * Returns any new arbitrage opportunities detected.
+     * Runs both statistical detection (mean + 2σ) and Vertex AI anomaly
+     * detection in parallel; an opportunity is flagged significant if either
+     * one fires. Falls back to stat-only on Vertex AI failure.
      */
-    analyze(prices: DexPrice[]): ArbitrageOpportunity[];
+    analyze(prices: DexPrice[]): Promise<ArbitrageOpportunity[]>;
     /** Get current adaptive thresholds for all pairs */
     getThresholds(): Record<string, {
         mean: number;

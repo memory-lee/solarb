@@ -21,6 +21,7 @@ export async function saveOpportunity(opp) {
                 sellPrice: opp.sellPrice,
                 spreadPercent: opp.spreadPercent,
                 isSignificant: opp.isSignificant,
+                mlDetected: opp.mlDetected,
             },
         }));
     }

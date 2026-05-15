@@ -25,6 +25,8 @@ export interface ArbitrageOpportunity {
   timestamp: number;
   /** Whether this exceeded the adaptive threshold */
   isSignificant: boolean;
+  /** Whether the ML model (Vertex AI) flagged this as an anomaly */
+  mlDetected: boolean;
 }
 
 /** Message format for libp2p gossipsub */
