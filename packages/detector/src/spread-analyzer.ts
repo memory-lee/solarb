@@ -57,8 +57,8 @@ class SpreadHistory {
 /** Pair index used as the third feature for the Vertex AI model */
 const PAIR_INDEX: Record<string, number> = {
   "SOL/USDC": 0,
-  "SOL/USDT": 1,
-  "BONK/SOL": 2,
+  "mSOL/SOL": 1,
+  "JitoSOL/SOL": 2,
 };
 
 export class SpreadAnalyzer {
