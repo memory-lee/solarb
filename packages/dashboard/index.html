@@ -380,36 +380,6 @@
 
   <div class="pilcrow">¶</div>
 
-  <!-- ===== § 04 adaptive thresholds ===== -->
-  <div class="row asym">
-    <div>
-      <div class="kicker">§ 04 — analyzer</div>
-      <h3 class="sect">adaptive thresholds</h3>
-      <p class="prose muted">
-        per-pair rolling statistics from the detector. threshold =
-        <span class="c-or">max(μ + kσ, min)</span>. samples is the size of the rolling window.
-      </p>
-    </div>
-    <div>
-      <table class="t" id="threshold-table">
-        <thead>
-          <tr>
-            <th>pair</th>
-            <th style="text-align:right">μ mean</th>
-            <th style="text-align:right">σ std</th>
-            <th style="text-align:right">threshold</th>
-            <th style="text-align:right">samples</th>
-          </tr>
-        </thead>
-        <tbody id="threshold-body">
-          <tr><td colspan="5" class="muted em">loading thresholds…</td></tr>
-        </tbody>
-      </table>
-    </div>
-  </div>
-
-  <div class="pilcrow">¶</div>
-
   <!-- ===== § 05 azure cloud logs ===== -->
   <div class="row asym">
     <div>
@@ -667,29 +637,6 @@
     return { total: sorted.length, significant: significant };
   }
 
-  function renderThresholds(thresholds) {
-    const body = document.getElementById("threshold-body");
-    const pairs = Object.keys(thresholds || {}).sort();
-    if (pairs.length === 0) {
-      body.innerHTML = '<tr><td colspan="5" class="muted em">no threshold data yet…</td></tr>';
-      return;
-    }
-    body.innerHTML = pairs.map(function (pair) {
-      const t = thresholds[pair];
-      return (
-        '<tr>' +
-          '<td><span class="pill or">' + escapeHtml(pair) + '</span></td>' +
-          '<td class="num">' + (t.mean != null ? t.mean.toFixed(4) + '%' : '--') + '</td>' +
-          '<td class="num">' + (t.std  != null ? t.std.toFixed(4) : '--') + '</td>' +
-          '<td class="num" style="color:var(--orange)">' +
-            (t.threshold != null ? t.threshold.toFixed(4) + '%' : '--') +
-          '</td>' +
-          '<td class="num muted">' + (t.samples != null ? t.samples : 0) + '</td>' +
-        '</tr>'
-      );
-    }).join("");
-  }
-
   function renderStats(opts) {
     document.getElementById("stat-opps").textContent = String(opts.totalOpps);
     document.getElementById("stat-opps-sub").innerHTML =
@@ -742,16 +689,14 @@
 
   async function poll() {
     try {
-      const [prices, opportunities, thresholds, status] = await Promise.all([
+      const [prices, opportunities, status] = await Promise.all([
         fetchJson("/api/prices"),
         fetchJson("/api/opportunities"),
-        fetchJson("/api/thresholds"),
         fetchJson("/api/status"),
       ]);
 
       const priceResult = renderPrices(prices || {});
-      const oppResult = renderOpportunities(opportunities || [], thresholds || {});
-      renderThresholds(thresholds || {});
+      const oppResult = renderOpportunities(opportunities || [], {});
 
       renderStats({
         totalOpps: oppResult.total,
