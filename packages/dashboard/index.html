@@ -410,6 +410,42 @@
 
   <div class="pilcrow">¶</div>
 
+  <!-- ===== § 05 azure cloud logs ===== -->
+  <div class="row asym">
+    <div>
+      <div class="kicker">§ 05 — cloud</div>
+      <h2 class="sect">azure function<span class="alt"> logs</span></h2>
+      <p class="prose muted">
+        significant detections are forwarded to an <span class="c-cy">azure function</span>
+        for ML enrichment and cold storage. this panel polls
+        <span class="c-or">/api/opportunities</span> on the function app every 10s.
+      </p>
+      <div class="stat-card" style="margin-top:14px">
+        <div class="label">logged opportunities</div>
+        <div class="num-big or" id="azure-count">--</div>
+        <div class="sub" id="azure-sub">awaiting first sync…</div>
+      </div>
+    </div>
+    <div>
+      <table class="t" id="azure-table">
+        <thead>
+          <tr>
+            <th>pair</th>
+            <th style="text-align:right">spread%</th>
+            <th>flow</th>
+            <th>ml</th>
+            <th>processed</th>
+          </tr>
+        </thead>
+        <tbody id="azure-body">
+          <tr><td colspan="5" class="muted em">waiting for azure function…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <div class="pilcrow">¶</div>
+
   <div class="foot">
     — built with mononoki energy <span class="arrow">→</span> solarized palette —<br/>
     polling <span id="foot-base">same-origin</span> every 5s
@@ -747,6 +783,85 @@
 
   poll();
   setInterval(poll, POLL_MS);
+
+  // ===== azure function logs =====
+  const AZURE_URL = "https://solarb-alerts.azurewebsites.net/api/opportunities";
+  const AZURE_POLL_MS = 10000;
+  let azureOpportunities = [];
+
+  function renderAzureOpportunities(opps) {
+    const countEl = document.getElementById("azure-count");
+    const subEl   = document.getElementById("azure-sub");
+    const bodyEl  = document.getElementById("azure-body");
+
+    if (!opps || opps.length === 0) {
+      countEl.textContent = "0";
+      subEl.textContent = "no azure logs yet";
+      bodyEl.innerHTML =
+        '<tr><td colspan="5" class="muted em">no azure logs yet…</td></tr>';
+      return;
+    }
+
+    countEl.textContent = String(opps.length);
+    subEl.textContent = "synced via azure function";
+
+    const sorted = opps.slice().sort(function (a, b) {
+      const at = a.processedAt ? new Date(a.processedAt).getTime() : 0;
+      const bt = b.processedAt ? new Date(b.processedAt).getTime() : 0;
+      return bt - at;
+    });
+
+    bodyEl.innerHTML = sorted.slice(0, 20).map(function (o) {
+      const mlYes = !!o.mlDetected;
+      const mlTag = mlYes
+        ? '<span class="pill gr">yes</span>'
+        : '<span class="pill">no</span>';
+      const processed = o.processedAt
+        ? new Date(o.processedAt).toLocaleTimeString("en-GB", { hour12: false })
+        : "--";
+      const spread =
+        typeof o.spreadPercent === "number"
+          ? o.spreadPercent.toFixed(4) + "%"
+          : "--";
+      return (
+        '<tr>' +
+          '<td><span class="pill or">' + escapeHtml(o.pair || "--") + '</span></td>' +
+          '<td class="num" style="color:var(--orange)">' + spread + '</td>' +
+          '<td>' +
+            '<span style="color:var(--green)">' + escapeHtml(o.buyDex || "--") + '</span>' +
+            '<span class="arrow" style="color:var(--green)"> → </span>' +
+            '<span style="color:var(--orange)">' + escapeHtml(o.sellDex || "--") + '</span>' +
+          '</td>' +
+          '<td>' + mlTag + '</td>' +
+          '<td class="muted">' + escapeHtml(processed) + '</td>' +
+        '</tr>'
+      );
+    }).join("");
+  }
+
+  function renderAzureUnavailable() {
+    document.getElementById("azure-count").textContent = "--";
+    document.getElementById("azure-sub").textContent = "azure function unavailable";
+    document.getElementById("azure-body").innerHTML =
+      '<tr><td colspan="5" class="muted em">Azure Function unavailable</td></tr>';
+  }
+
+  async function pollAzure() {
+    try {
+      const res = await fetch(AZURE_URL, { cache: "no-store" });
+      if (!res.ok) throw new Error("status " + res.status);
+      const data = await res.json();
+      azureOpportunities = Array.isArray(data)
+        ? data
+        : (data && Array.isArray(data.opportunities) ? data.opportunities : []);
+      renderAzureOpportunities(azureOpportunities);
+    } catch (err) {
+      renderAzureUnavailable();
+    }
+  }
+
+  pollAzure();
+  setInterval(pollAzure, AZURE_POLL_MS);
 </script>
 </body>
 </html>

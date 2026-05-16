@@ -9,6 +9,7 @@ import { SpreadAnalyzer } from "./spread-analyzer.js";
 import { startApiServer } from "./api.js";
 import { saveOpportunity } from "./dynamodb.js";
 import { sendAlert } from "./sns.js";
+import { logToAzure } from "./azure-function.js";
 
 const DETECTOR_P2P_PORT = Number(process.env.DETECTOR_P2P_PORT) || 6002;
 
@@ -83,6 +84,9 @@ function logAnalysis(
       );
       sendAlert(opp).catch((err) =>
         console.error("[SNS] Alert failed:", err)
+      );
+      logToAzure(opp).catch((err) =>
+        console.error("[AzureFunc] Log failed:", err)
       );
     }
   }
