@@ -14,7 +14,7 @@ const DETECTOR_P2P_PORT = Number(process.env.DETECTOR_P2P_PORT) || 6002;
 
 const analyzer = new SpreadAnalyzer({
   multiplier: 2, // 2 standard deviations
-  minThreshold: 0.005, // 0.005% minimum threshold
+  minThreshold: 0.02, // 0.02% minimum threshold
 });
 
 /**
