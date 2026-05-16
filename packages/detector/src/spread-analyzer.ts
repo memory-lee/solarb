@@ -84,7 +84,7 @@ export class SpreadAnalyzer {
     maxOpportunities?: number;
   }) {
     this.multiplier = opts?.multiplier ?? 2;
-    this.minThreshold = opts?.minThreshold ?? 0.02; // 0.02%
+    this.minThreshold = opts?.minThreshold ?? 0.5; // 0.5%
     this.maxOpportunities = opts?.maxOpportunities ?? 1000;
   }
 
